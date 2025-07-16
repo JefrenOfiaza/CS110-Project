@@ -1,4 +1,3 @@
-
 <template>
   <div class="post">
     <div class="post-header">
@@ -20,7 +19,16 @@ const props = defineProps({
 });
 
 const formatDate = (timestamp) => {
-  return new Date(timestamp).toLocaleString();
+  if (timestamp && timestamp.toDate) {
+    return timestamp.toDate().toLocaleString();
+  }
+  if (timestamp && timestamp.toMillis) {
+    return new Date(timestamp.toMillis()).toLocaleString();
+  }
+  if (timestamp) {
+    return new Date(timestamp).toLocaleString();
+  }
+  return 'Unknown date';
 };
 </script>
 

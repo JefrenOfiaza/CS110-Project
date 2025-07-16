@@ -1,8 +1,8 @@
-
 <template>
   <div class="login-container">
     <div class="login-box">
-      <!-- Login Form -->
+      
+      <!-- Shows when user wants to log in -->
       <div v-if="!isLoggedIn && currentView === 'login'" class="auth-form">
         <h2>Log In</h2>
         <form @submit.prevent="handleLogin">
@@ -14,10 +14,11 @@
           </div>
           <button type="submit" class="submit-btn">Log In</button>
         </form>
+        <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
         <p class="switch-text">Don't have an account? <a @click="currentView = 'create'">Create one</a></p>
       </div>
 
-      <!-- Create Account Form -->
+      <!-- Shows when user wants to sign up -->
       <div v-if="!isLoggedIn && currentView === 'create'" class="auth-form">
         <h2>Create Account</h2>
         <form @submit.prevent="handleCreateAccount">
@@ -29,15 +30,17 @@
           </div>
           <button type="submit" class="submit-btn">Create Account</button>
         </form>
+        <!-- Show error message if account creation fails -->
+        <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
         <p class="switch-text">Already have an account? <a @click="currentView = 'login'">Log in</a></p>
       </div>
 
-      <!-- Logged In View -->
       <div v-if="isLoggedIn" class="logged-in-view">
         <h2>Welcome!</h2>
-        <p>You are logged in as {{ currentUser }}</p>
+        <p>You are logged in as {{ currentUser?.email }}</p>
         <button @click="handleLogout" class="logout-btn">Log Out</button>
       </div>
+      
     </div>
   </div>
 </template>
@@ -45,64 +48,103 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, firestore } from '@/firebaseResources';
 
 const router = useRouter();
 
-// Form state
-const currentView = ref('login');
+const currentView = ref('login'); // 'login' or 'create'
 const loginEmail = ref('');
 const loginPassword = ref('');
 const createEmail = ref('');
 const createPassword = ref('');
-
-// Auth state
+const errorMessage = ref('');   
 const isLoggedIn = ref(false);
-const currentUser = ref('');
+const currentUser = ref(null);
 
-// Mock user
-const validUser = {
-  email: 'test@ucr.edu',
-  password: 'password123'
-};
-
-// Check auth status on mount
 onMounted(() => {
-  const savedUser = localStorage.getItem('currentUser');
-  if (savedUser) {
-    isLoggedIn.value = true;
-    currentUser.value = savedUser;
-  }
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      isLoggedIn.value = true;
+      currentUser.value = user;
+    } else {
+      isLoggedIn.value = false;
+      currentUser.value = null;
+    }
+  });
 });
 
-// Handle login
-const handleLogin = () => {
-  if (loginEmail.value === validUser.email && loginPassword.value === validUser.password) {
-    localStorage.setItem('currentUser', loginEmail.value);
+const handleLogin = async () => {
+  errorMessage.value = '';     // Clear previous errors
+  
+  try {
+    const userCredential = await signInWithEmailAndPassword(
+      auth, 
+      loginEmail.value, 
+      loginPassword.value
+    );
+    
+    currentUser.value = userCredential.user;
     isLoggedIn.value = true;
-    currentUser.value = loginEmail.value;
+    
+    // Redirect to home page
     router.push('/');
-  } else {
-    alert('Invalid credentials');
+    
+  } catch (error) {
+    errorMessage.value = 'Invalid email or password';
+    // Clear password 
     loginPassword.value = '';
+    console.error('Login error:', error);
   }
 };
 
-// Handle account creation
-const handleCreateAccount = () => {
-  if (createEmail.value && createPassword.value) {
-    localStorage.setItem('currentUser', createEmail.value);
+const handleCreateAccount = async () => {
+  errorMessage.value = '';
+  
+  try {
+    const userCredential = await createUserWithEmailAndPassword(
+      auth, 
+      createEmail.value, 
+      createPassword.value
+    );
+    const user = userCredential.user;
+
+    await setDoc(doc(firestore, 'users', user.uid), {
+      email: user.email,        
+      feed: [],                    
+      followers: [],             
+      following: [],             
+      posts: []                    
+    });
+  
+    currentUser.value = user;
     isLoggedIn.value = true;
-    currentUser.value = createEmail.value;
+    
+    // Redirect to home page
     router.push('/');
+    
+  } catch (error) {
+    errorMessage.value = 'Account creation failed. Please try again.';
+    // Clear password field
+    createPassword.value = '';
+    console.error('Account creation error:', error);
   }
 };
 
-// Handle logout
-const handleLogout = () => {
-  localStorage.removeItem('currentUser');
-  isLoggedIn.value = false;
-  currentUser.value = '';
-  currentView.value = 'login';
+const handleLogout = async () => {
+  try {
+    // Sign out from Firebase
+    await signOut(auth);
+    
+    // Reset local state
+    isLoggedIn.value = false;
+    currentUser.value = null;
+    currentView.value = 'login';
+    
+  } catch (error) {
+    console.error('Error signing out:', error);
+  }
 };
 </script>
 
@@ -111,24 +153,23 @@ const handleLogout = () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 100vh;
-  background-color: #f5f5f5;
-  padding: 20px;
+  min-height: 100vh;          
+  background-color: #f5f5f5;  
 }
 
 .login-box {
   background: white;
   border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);  
   padding: 2rem;
   width: 100%;
-  max-width: 400px;
+  max-width: 400px;           
 }
 
 .auth-form {
   display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  flex-direction: column;     
+  gap: 1.5rem;               
 }
 
 .form-group {
@@ -146,12 +187,22 @@ input {
 
 .submit-btn {
   padding: 0.75rem;
-  background-color: #42b983;
+  background-color: #42b983;  
   color: white;
   border: none;
   border-radius: 4px;
   font-size: 1rem;
   cursor: pointer;
+}
+
+.submit-btn:hover {
+  background-color: #3aa876;  
+}
+
+.error-message {
+  color: #ff4444;            
+  text-align: center;
+  margin: 0;
 }
 
 .switch-text {
@@ -160,7 +211,7 @@ input {
 }
 
 .switch-text a {
-  color: #42b983;
+  color: #42b983;             
   cursor: pointer;
 }
 
@@ -170,7 +221,7 @@ input {
 }
 
 .logout-btn {
-  background-color: #ff4444;
+  background-color: #ff4444;  
   color: white;
   border: none;
   padding: 0.75rem;
